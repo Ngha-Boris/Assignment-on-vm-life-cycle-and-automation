@@ -1,0 +1,240 @@
+# Hostname configuration
+hostname: cloudinit-demo
+fqdn: cloudinit-demo.local
+
+# Timezone
+timezone: UTC
+
+# User configuration
+users:
+  - name: clouduser
+    groups: sudo, docker
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: false
+    # Password: cloudpass (generated with: mkpasswd --method=SHA-512 --rounds=4096)
+    passwd: $6$rounds=4096$saltsaltsal$IjGXPEu5czcwJ1fFJ.kAqXLXNEkH9fqJUPzBvqgVWMZxXbLwNUdNmYHp8M6.GkZGQKqSFdKNKgPU3GfHPQ/
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... # Add your SSH public key here if you have one
+  
+  - name: adminuser
+    groups: sudo, adm, systemd-journal
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: false
+    passwd: $6$rounds=4096$saltsaltsal$IjGXPEu5czcwJ1fFJ.kAqXLXNEkH9fqJUPzBvqgVWMZxXbLwNUdNmYHp8M6.GkZGQKqSFdKNKgPU3GfHPQ/
+
+# Package management
+package_update: true
+package_upgrade: true
+
+# Packages to install
+packages:
+  - nginx
+  - docker.io
+  - docker-compose
+  - git
+  - curl
+  - vim
+  - htop
+  - net-tools
+  - python3-pip
+  - ufw
+  - tree
+  - wget
+
+# Run commands (executed in order after packages are installed)
+runcmd:
+  # Configure firewall
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+  
+  # Start and enable Docker
+  - systemctl start docker
+  - systemctl enable docker
+  
+  # Add users to docker group
+  - usermod -aG docker clouduser
+  - usermod -aG docker adminuser
+  - usermod -aG docker ubuntu
+  
+  # Configure nginx
+  - systemctl enable nginx
+  - systemctl start nginx
+  
+  # Create custom nginx page
+  - |
+    cat > /var/www/html/index.html <<EOF
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Cloud-Init Configured VM</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 40px; }
+            h1 { color: #0066cc; }
+            .info { background: #f0f0f0; padding: 15px; border-radius: 5px; }
+        </style>
+    </head>
+    <body>
+        <h1>Cloud-Init Configured VM</h1>
+        <div class="info">
+            <p><strong>Configured on:</strong> $(date)</p>
+            <p><strong>Hostname:</strong> $(hostname)</p>
+            <p><strong>IP Address:</strong> $(hostname -I)</p>
+            <p><strong>OS:</strong> $(lsb_release -d | cut -f2)</p>
+        </div>
+        <h2>Installed Services</h2>
+        <ul>
+            <li>Nginx web server (port 80)</li>
+            <li>Docker and Docker Compose</li>
+            <li>UFW Firewall (enabled)</li>
+        </ul>
+        <h2>Configured Users</h2>
+        <ul>
+            <li>clouduser (sudo access)</li>
+            <li>adminuser (sudo access)</li>
+        </ul>
+    </body>
+    </html>
+    EOF
+  
+  # Create a welcome script
+  - |
+    cat > /etc/profile.d/welcome.sh <<'WELCOMEOF'
+    #!/bin/bash
+    echo "================================================"
+    echo "  Welcome to Cloud-Init Configured Ubuntu VM"
+    echo "================================================"
+    echo "This VM was automatically configured using cloud-init"
+    echo ""
+    echo "Installed services:"
+    echo "  - Nginx: http://$(hostname -I | awk '{print $1}')"
+    echo "  - Docker: $(docker --version)"
+    echo ""
+    echo "Users: clouduser, adminuser (password: cloudpass)"
+    echo "================================================"
+    WELCOMEOF
+  - chmod +x /etc/profile.d/welcome.sh
+  
+  # Run a Docker container as example
+  - docker pull nginx:alpine
+  - docker run -d --name web-container --restart always -p 8080:80 nginx:alpine
+  
+  # Create system info script
+  - |
+    cat > /usr/local/bin/system-info.sh <<'SYSEOF'
+    #!/bin/bash
+    echo "==================================="
+    echo "       SYSTEM INFORMATION"
+    echo "==================================="
+    echo "Hostname:     $(hostname)"
+    echo "FQDN:         $(hostname -f)"
+    echo "IP Address:   $(hostname -I)"
+    echo "OS:           $(lsb_release -d | cut -f2)"
+    echo "Kernel:       $(uname -r)"
+    echo "Uptime:       $(uptime -p)"
+    echo "Memory:       $(free -h | grep Mem | awk '{print $3 " / " $2}')"
+    echo "Disk Usage:   $(df -h / | tail -1 | awk '{print $3 " / " $2 " (" $5 ")"}')"
+    echo "==================================="
+    SYSEOF
+  - chmod +x /usr/local/bin/system-info.sh
+
+# Write files to disk
+write_files:
+  - path: /etc/motd
+    content: |
+      ╔════════════════════════════════════════════════════════╗
+      ║                                                        ║
+      ║    Welcome to Cloud-Init Configured Ubuntu Server     ║
+      ║                                                        ║
+      ╚════════════════════════════════════════════════════════╝
+      
+      This system was automatically configured using cloud-init
+      
+      ┌─────────────────────────────────────────────────────┐
+      │ INSTALLED SERVICES                                  │
+      ├─────────────────────────────────────────────────────┤
+      │ • Nginx web server (port 80)                        │
+      │ • Docker with nginx:alpine container (port 8080)    │
+      │ • UFW Firewall (enabled)                            │
+      │ • Development tools (git, vim, htop, etc.)          │
+      └─────────────────────────────────────────────────────┘
+      
+      ┌─────────────────────────────────────────────────────┐
+      │ CONFIGURED USERS                                    │
+      ├─────────────────────────────────────────────────────┤
+      │ • clouduser (sudo access, password: cloudpass)      │
+      │ • adminuser (sudo access, password: cloudpass)      │
+      └─────────────────────────────────────────────────────┘
+      
+      Run 'system-info.sh' for detailed system information
+      
+    permissions: '0644'
+  
+  - path: /home/clouduser/README.txt
+    content: |
+      Cloud-Init Configuration Summary
+      ================================
+      
+      This VM was configured automatically using cloud-init on first boot.
+      
+      What was configured:
+      --------------------
+      1. Users: clouduser and adminuser with sudo privileges
+      2. Packages: nginx, docker, git, vim, htop, and more
+      3. Services: nginx enabled and started, docker enabled
+      4. Firewall: UFW enabled with ports 22, 80, 443 open
+      5. Docker container: nginx:alpine running on port 8080
+      6. Custom web page at http://localhost/
+      7. Welcome message and system info script
+      
+      Useful Commands:
+      ----------------
+      - system-info.sh          # Display system information
+      - sudo docker ps          # View running containers
+      - sudo ufw status         # Check firewall status
+      - curl http://localhost   # Test nginx
+      - curl http://localhost:8080  # Test Docker container
+      
+      All configurations are defined in the cloud-init.yaml file.
+    owner: clouduser:clouduser
+    permissions: '0644'
+  
+  - path: /home/adminuser/README.txt
+    content: |
+      Administrator User Guide
+      ========================
+      
+      This is the adminuser account with administrative privileges.
+      Password: cloudpass
+      
+      You have access to:
+      - sudo commands (passwordless)
+      - docker group membership
+      - system logs (adm and systemd-journal groups)
+      
+      Check /home/clouduser/README.txt for full system details.
+    owner: adminuser:adminuser
+    permissions: '0644'
+
+# SSH configuration
+ssh_pwauth: true
+disable_root: true
+
+# Final message displayed when cloud-init completes
+final_message: |
+  ╔════════════════════════════════════════════════════════╗
+  ║  Cloud-init configuration completed successfully!      ║
+  ╚════════════════════════════════════════════════════════╝
+  
+  System is ready for use.
+  Uptime: $UPTIME
+  Instance ID: $INSTANCE_ID
+  
+  Access the web server at: http://<VM-IP-ADDRESS>/
+  
+  Login credentials:
+    Username: clouduser or adminuser
+    Password: cloudpass
